@@ -63,8 +63,7 @@ export const Material = models.Material || mongoose.model<IMaterial>('Material',
 export interface IUser {
     _id: string;
     name: string;
-    email: string;
-    image?: string;
+    mobile: string;
     role: 'ADMIN' | 'USER';
     lastLogin: Date;
     createdAt: Date;
@@ -72,8 +71,7 @@ export interface IUser {
 
 const UserSchema = new Schema<IUser>({
     name: { type: String, required: true },
-    email: { type: String, required: true, unique: true },
-    image: { type: String },
+    mobile: { type: String, required: true, unique: true },
     role: { type: String, enum: ['ADMIN', 'USER'], default: 'USER' },
     lastLogin: { type: Date, default: Date.now },
     createdAt: { type: Date, default: Date.now },
