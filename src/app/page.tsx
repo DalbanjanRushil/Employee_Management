@@ -1,17 +1,42 @@
 import { getDashboardStats } from '@/lib/data';
 import Link from 'next/link';
 import { PlusCircle, Users, Package, FileBarChart } from 'lucide-react';
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import UserMenu from "@/components/UserMenu";
 
 export const dynamic = 'force-dynamic';
 
 export default async function Dashboard() {
+  const session = await getServerSession(authOptions);
+
+  if (!session) {
+    redirect("/login");
+  }
+
   const stats = await getDashboardStats();
+
+  const userFirstName = session.user?.name?.split(' ')[0] || "Sanjay";
+  const today = new Date();
+  const dateOptions: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'long' };
+  const dateString = today.toLocaleDateString('en-US', dateOptions);
 
   return (
     <div className="p-5 space-y-8 pb-24">
-      <header>
-        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Overview</h1>
-        <p className="text-slate-500 text-sm font-medium">Here's what's happening today.</p>
+      <header className="flex justify-between items-start">
+        <div className="animate-fade-in-up">
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+            Welcome, {userFirstName}
+          </h1>
+          <p className="text-slate-500 text-sm font-medium mt-1">
+            {dateString}
+          </p>
+          <p className="text-indigo-600 text-xs font-semibold uppercase tracking-wider mt-2 bg-indigo-50 inline-block px-2 py-1 rounded-md">
+            Let&apos;s build profit today.
+          </p>
+        </div>
+        <UserMenu user={session.user} />
       </header>
 
       {/* Stats Grid */}

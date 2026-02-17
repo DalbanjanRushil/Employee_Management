@@ -1,11 +1,15 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  webpack: (config) => {
-    config.externals.push({
-      "better-sqlite3": "commonjs better-sqlite3",
-    });
-    return config;
+  // Remove webpack config for better-sqlite3 as it's not needed for MongoDB
+  // and conflicts with Next.js 16 Turbopack default
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '*.googleusercontent.com',
+      },
+    ],
   },
 };
 

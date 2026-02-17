@@ -8,6 +8,9 @@ import clsx from 'clsx';
 export default function BottomNav() {
     const pathname = usePathname();
 
+    if (pathname === '/login') return null;
+
+
     const navItems = [
         { name: 'Home', href: '/', icon: LayoutDashboard },
         { name: 'Workers', href: '/workers', icon: Users },

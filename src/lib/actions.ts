@@ -1,10 +1,13 @@
 'use server';
 
-import db from '@/lib/db';
+import dbConnect from '@/lib/db';
+import { Worker, WorkOrder, Material } from '@/lib/models';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
 export async function createWorker(formData: FormData) {
+    await dbConnect();
+
     const name = formData.get('name') as string;
     const labourRate = parseFloat(formData.get('labourRate') as string);
 
@@ -12,14 +15,20 @@ export async function createWorker(formData: FormData) {
         throw new Error("Invalid Input");
     }
 
-    db.prepare('INSERT INTO workers (name, labour_rate) VALUES (?, ?)').run(name, labourRate);
+    await Worker.create({
+        name,
+        labourRate,
+        isActive: true
+    });
 
     revalidatePath('/workers');
     redirect('/workers');
 }
 
 export async function createWorkOrder(formData: FormData) {
-    const workerId = parseInt(formData.get('workerId') as string);
+    await dbConnect();
+
+    const workerId = formData.get('workerId') as string;
     const quantity = parseInt(formData.get('quantity') as string);
     const sellingPrice = parseFloat(formData.get('sellingPrice') as string);
     const labourRate = parseFloat(formData.get('labourRate') as string);
@@ -28,31 +37,47 @@ export async function createWorkOrder(formData: FormData) {
         throw new Error('Missing required fields');
     }
 
-    db.prepare(`
-    INSERT INTO work_orders (worker_id, quantity, selling_price, labour_rate, status)
-    VALUES (?, ?, ?, ?, 'PENDING')
-  `).run(workerId, quantity, sellingPrice, labourRate);
+    await WorkOrder.create({
+        workerId,
+        quantity,
+        sellingPrice,
+        labourRate,
+        status: 'PENDING'
+    });
 
     revalidatePath('/');
     revalidatePath('/work');
     redirect('/work');
 }
 
-export async function markWorkStatus(id: number, status: string) {
-    const completedAt = status === 'COMPLETED' ? new Date().toISOString() : null;
+export async function markWorkStatus(id: string, status: string) {
+    await dbConnect();
 
-    db.prepare(`
-    UPDATE work_orders 
-    SET status = ?, completed_at = ?
-    WHERE id = ?
-  `).run(status, completedAt, id);
+    const completedAt = status === 'COMPLETED' ? new Date() : undefined;
+    // If reverting from completed? 
+    // If status is not completed, completedAt should be unset?
+    // Let's handle simple flow.
+
+    const update: any = { status };
+    if (status === 'COMPLETED') {
+        update.completedAt = new Date();
+    } else if (status === 'PENDING') {
+        update.completedAt = null; // Unset
+    }
+
+    await WorkOrder.findByIdAndUpdate(id, update);
 
     revalidatePath('/work');
     revalidatePath('/');
+    // revalidatePath(`/workers/${workerId}`); // We don't have workerId easily here without fetch. 
+    // Ideally we should fetch and revalidate, but nextjs revalidates general layout usually?
+    // Let's just revalidate global paths.
 }
 
 export async function createMaterialUsage(formData: FormData) {
-    const workerId = parseInt(formData.get('workerId') as string);
+    await dbConnect();
+
+    const workerId = formData.get('workerId') as string;
     const name = formData.get('name') as string;
     const cost = parseFloat(formData.get('cost') as string);
 
@@ -60,10 +85,11 @@ export async function createMaterialUsage(formData: FormData) {
         throw new Error("Invalid Input");
     }
 
-    db.prepare(`
-    INSERT INTO materials (worker_id, name, cost)
-    VALUES (?, ?, ?)
-  `).run(workerId, name, cost);
+    await Material.create({
+        workerId,
+        name,
+        cost
+    });
 
     revalidatePath('/ledger');
     redirect('/ledger');

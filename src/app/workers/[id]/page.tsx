@@ -5,7 +5,7 @@ import { format } from 'date-fns';
 export const dynamic = 'force-dynamic';
 
 export default async function WorkerDetailPage({ params }: { params: { id: string } }) {
-    const id = parseInt(params.id);
+    const id = params.id;
     const worker = await getWorkerById(id) as any;
     const stats = await getWorkerStats(id);
     const workHistory = await getWorkerWorkHistory(id) as any[];
@@ -19,7 +19,7 @@ export default async function WorkerDetailPage({ params }: { params: { id: strin
         <div className="p-5 pb-24 space-y-6">
             <header>
                 <h1 className="text-2xl font-bold text-slate-900">{worker.name}</h1>
-                <p className="text-slate-500 text-sm">Joined {format(new Date(worker.joined_at), 'MMMM d, yyyy')}</p>
+                <p className="text-slate-500 text-sm">Joined {format(new Date(worker.joinedAt), 'MMMM d, yyyy')}</p>
             </header>
 
             {/* Month Stats */}

@@ -26,12 +26,12 @@ export default async function WorkersPage() {
                                 </div>
                                 <div>
                                     <h3 className="font-semibold text-slate-900">{worker.name}</h3>
-                                    <p className="text-sm text-slate-500">Rate: ₹{worker.labour_rate}/pc</p>
+                                    <p className="text-sm text-slate-500">Rate: ₹{worker.labourRate}/pc</p>
                                 </div>
                             </div>
                             <div className="flex flex-col items-end">
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${worker.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                                    {worker.is_active ? 'Active' : 'Inactive'}
+                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${worker.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                                    {worker.isActive ? 'Active' : 'Inactive'}
                                 </span>
                             </div>
                         </div>

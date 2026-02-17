@@ -5,7 +5,8 @@ import { clsx } from 'clsx';
 import { CheckCircle, Clock, SearchCheck } from 'lucide-react';
 import { useTransition } from 'react';
 
-export default function WorkStatusUpdater({ id, status }: { id: number, status: string }) {
+// ID is now string (MongoDB ObjectId)
+export default function WorkStatusUpdater({ id, status }: { id: string, status: string }) {
     const [isPending, startTransition] = useTransition();
 
     const handleNextStatus = () => {
@@ -40,6 +41,7 @@ export default function WorkStatusUpdater({ id, status }: { id: number, status: 
         >
             <Icon size={14} />
             <span>{isPending ? 'Saving...' : config.label}</span>
+            {/* Remove loading text on mobile maybe? Just icon spin? */}
         </button>
     );
 }

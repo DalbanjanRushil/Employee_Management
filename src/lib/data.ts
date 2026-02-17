@@ -1,200 +1,220 @@
-import db from '@/lib/db';
+import dbConnect from './db';
+import { WorkOrder, Worker, Material } from './models';
 import { startOfDay, endOfDay, startOfMonth, endOfMonth, format } from 'date-fns';
 
+// Helper to stringify ObjectId for client consumption if needed
+// function serialize(obj: any) {
+//    return JSON.parse(JSON.stringify(obj));
+// }
+
 export async function getDashboardStats() {
+  await dbConnect();
+
   const now = new Date();
-  const start = format(startOfDay(now), 'yyyy-MM-dd HH:mm:ss');
-  const end = format(endOfDay(now), 'yyyy-MM-dd HH:mm:ss');
+  const start = startOfDay(now);
+  const end = endOfDay(now);
 
   // Today's Completed Pieces
-  const completedToday = db.prepare(`
-    SELECT SUM(quantity) as total 
-    FROM work_orders 
-    WHERE status = 'COMPLETED' 
-    AND completed_at BETWEEN ? AND ?
-  `).get(start, end) as { total: number };
+  const completedToday = await WorkOrder.aggregate([
+    { $match: { status: 'COMPLETED', completedAt: { $gte: start, $lte: end } } },
+    { $group: { _id: null, total: { $sum: '$quantity' } } }
+  ]);
 
   // Pending Work
-  const pendingWork = db.prepare(`
-    SELECT COUNT(*) as count, SUM(quantity) as total_qty
-    FROM work_orders
-    WHERE status = 'PENDING'
-  `).get() as { count: number, total_qty: number };
+  const pendingWork = await WorkOrder.aggregate([
+    { $match: { status: 'PENDING' } },
+    { $group: { _id: null, count: { $sum: 1 }, total_qty: { $sum: '$quantity' } } }
+  ]);
 
-  // Today's Profit (approx)
-  // Profit = Revenue (selling_price * qty) - Labour (labour_rate * qty) - Materials (today?)
-  const completedOrders = db.prepare(`
-    SELECT quantity, selling_price, labour_rate
-    FROM work_orders
-    WHERE status = 'COMPLETED'
-    AND completed_at BETWEEN ? AND ?
-  `).all(start, end) as { quantity: number, selling_price: number, labour_rate: number }[];
+  // Today's Profit
+  const completedOrders = await WorkOrder.find({
+    status: 'COMPLETED',
+    completedAt: { $gte: start, $lte: end }
+  });
 
-  const revenue = completedOrders.reduce((sum, o) => sum + (o.quantity * o.selling_price), 0);
-  const labourCost = completedOrders.reduce((sum, o) => sum + (o.quantity * o.labour_rate), 0);
+  const revenue = completedOrders.reduce((sum, o) => sum + (o.quantity * o.sellingPrice), 0);
+  const labourCost = completedOrders.reduce((sum, o) => sum + (o.quantity * o.labourRate), 0);
 
   // Materials used today
-  const materialCost = db.prepare(`
-    SELECT SUM(cost) as total
-    FROM materials
-    WHERE date BETWEEN ? AND ?
-  `).get(start, end) as { total: number };
+  const materialCost = await Material.aggregate([
+    { $match: { date: { $gte: start, $lte: end } } },
+    { $group: { _id: null, total: { $sum: '$cost' } } }
+  ]);
 
-  const profit = revenue - labourCost - (materialCost.total || 0);
+  const matTotal = materialCost[0]?.total || 0;
+  const profit = revenue - labourCost - matTotal;
 
   return {
-    piecesToday: completedToday.total || 0,
-    pendingOrders: pendingWork.count || 0,
-    pendingPieces: pendingWork.total_qty || 0,
+    piecesToday: completedToday[0]?.total || 0,
+    pendingOrders: pendingWork[0]?.count || 0,
+    pendingPieces: pendingWork[0]?.total_qty || 0,
     profitToday: profit,
   };
 }
 
+
 export async function getWorkers() {
-  return db.prepare('SELECT * FROM workers ORDER BY name ASC').all();
+  await dbConnect();
+  const workers = await Worker.find({}).sort({ name: 1 }).lean();
+  return workers.map((w: any) => ({ ...w, id: w._id.toString() }));
 }
 
-export async function getWorkHistory(limit = 10) {
-  return db.prepare(`
-        SELECT w.*, wk.name as worker_name 
-        FROM work_orders w
-        JOIN workers wk ON w.worker_id = wk.id
-        ORDER BY w.created_at DESC 
-        LIMIT ?
-    `).all(limit);
+export async function getWorkerById(id: string) {
+  await dbConnect();
+  // Validate ObjectId if strictly needed, but let mongoose handle it
+  const worker = await Worker.findById(id).lean();
+  if (!worker) return null;
+  return { ...worker, id: worker._id.toString() };
 }
 
-export async function getWorkerById(id: number) {
-  return db.prepare('SELECT * FROM workers WHERE id = ?').get(id);
-}
-
-export async function getWorkerStats(workerId: number) {
-  // Aggregate all time or current month? User asked for "Monthly worker ledger view".
-  // Let's get current month stats first.
+export async function getWorkerStats(workerId: string) {
+  await dbConnect();
   const now = new Date();
-  const start = format(startOfMonth(now), 'yyyy-MM-dd HH:mm:ss');
-  const end = format(endOfMonth(now), 'yyyy-MM-dd HH:mm:ss');
+  const start = startOfMonth(now);
+  const end = endOfMonth(now);
 
-  const work = db.prepare(`
-    SELECT SUM(quantity) as total_pieces, SUM(quantity * labour_rate) as total_earnings
-    FROM work_orders
-    WHERE worker_id = ? AND status = 'COMPLETED' AND completed_at BETWEEN ? AND ?
-  `).get(workerId, start, end) as { total_pieces: number, total_earnings: number };
+  // Convert string ID to ObjectId for aggregation
+  const mongoose = await import('mongoose');
+  const oId = new mongoose.Types.ObjectId(workerId);
 
-  const materials = db.prepare(`
-    SELECT SUM(cost) as total_deductions
-    FROM materials
-    WHERE worker_id = ? AND date BETWEEN ? AND ?
-  `).get(workerId, start, end) as { total_deductions: number };
+  const work = await WorkOrder.aggregate([
+    {
+      $match: {
+        workerId: oId,
+        status: 'COMPLETED',
+        completedAt: { $gte: start, $lte: end }
+      }
+    },
+    {
+      $group: {
+        _id: null,
+        total_pieces: { $sum: '$quantity' },
+        total_earnings: { $sum: { $multiply: ['$quantity', '$labourRate'] } }
+      }
+    }
+  ]);
+
+  const material = await Material.aggregate([
+    { $match: { workerId: oId, date: { $gte: start, $lte: end } } },
+    { $group: { _id: null, total: { $sum: '$cost' } } }
+  ]);
+
+  const earnings = work[0]?.total_earnings || 0;
+  const deductions = material[0]?.total || 0;
 
   return {
-    pieces: work.total_pieces || 0,
-    earnings: work.total_earnings || 0,
-    deductions: materials.total_deductions || 0,
-    net_salary: (work.total_earnings || 0) - (materials.total_deductions || 0)
+    pieces: work[0]?.total_pieces || 0,
+    earnings: earnings,
+    deductions: deductions,
+    net_salary: earnings - deductions
   };
 }
 
 export async function getAllWorkOrders() {
-  return db.prepare(`
-      SELECT wo.*, w.name as worker_name 
-      FROM work_orders wo
-      JOIN workers w ON wo.worker_id = w.id
-      ORDER BY wo.created_at DESC
-   `).all();
+  await dbConnect();
+  const orders = await WorkOrder.find({})
+    .populate('workerId', 'name')
+    .sort({ createdAt: -1 })
+    .lean();
+
+  return orders.map((o: any) => ({
+    ...o,
+    id: o._id.toString(),
+    worker_name: o.workerId?.name || 'Unknown'
+  }));
 }
 
 export async function getAllMaterials() {
-  return db.prepare(`
-      SELECT m.*, w.name as worker_name
-      FROM materials m
-      JOIN workers w ON m.worker_id = w.id
-      ORDER BY m.date DESC
-   `).all();
+  await dbConnect();
+  const mats = await Material.find({})
+    .populate('workerId', 'name')
+    .sort({ date: -1 })
+    .lean();
+
+  return mats.map((m: any) => ({
+    ...m,
+    id: m._id.toString(),
+    worker_name: m.workerId?.name || 'Unknown'
+  }));
 }
 
 export async function getMonthLedger(date: Date) {
-  const start = format(startOfMonth(date), 'yyyy-MM-dd HH:mm:ss');
-  const end = format(endOfMonth(date), 'yyyy-MM-dd HH:mm:ss');
+  await dbConnect();
+  const start = startOfMonth(date);
+  const end = endOfMonth(date);
 
   // Business Totals
-  const business = db.prepare(`
-    SELECT 
-      SUM(w.quantity * w.selling_price) as revenue,
-      SUM(w.quantity * w.labour_rate) as labour_cost
-    FROM work_orders w
-    WHERE w.status = 'COMPLETED' 
-    AND w.completed_at BETWEEN ? AND ?
-  `).get(start, end) as { revenue: number, labour_cost: number };
+  // Can assume business profit = (Rev - Labour) for all COMPLETED work in range
+  // - Material costs in range?
+  const completedOrders = await WorkOrder.find({
+    status: 'COMPLETED',
+    completedAt: { $gte: start, $lte: end }
+  }).lean();
 
-  const materials = db.prepare(`
-    SELECT SUM(cost) as total
-    FROM materials
-    WHERE date BETWEEN ? AND ?
-  `).get(start, end) as { total: number };
+  const revenue = completedOrders.reduce((sum, o: any) => sum + (o.quantity * o.sellingPrice), 0);
+  const labourCost = completedOrders.reduce((sum, o: any) => sum + (o.quantity * o.labourRate), 0);
+
+  const materials = await Material.aggregate([
+    { $match: { date: { $gte: start, $lte: end } } },
+    { $group: { _id: null, total: { $sum: '$cost' } } }
+  ]);
+  const matCost = materials[0]?.total || 0;
 
   // Worker Breakdown
-  const workers = db.prepare(`
-    SELECT 
-      wk.id, 
-      wk.name,
-      COALESCE(SUM(wo.quantity), 0) as pieces,
-      COALESCE(SUM(wo.quantity * wo.labour_rate), 0) as gross_pay
-    FROM workers wk
-    LEFT JOIN work_orders wo ON wk.id = wo.worker_id 
-      AND wo.status = 'COMPLETED' 
-      AND wo.completed_at BETWEEN ? AND ?
-    GROUP BY wk.id
-  `).all(start, end) as any[];
+  const workers = await Worker.find({}).lean();
+  const workerStats = await Promise.all(workers.map(async (w: any) => {
+    const wId = w._id;
 
-  // Get material deductions per worker
-  // Helper to attach deductions
-  // Since SQLite simple join aggregation might duplicate if multiple materials, better to query separately or subquery.
-  // Or just iterate workers.
+    const wWork = await WorkOrder.aggregate([
+      { $match: { workerId: wId, status: 'COMPLETED', completedAt: { $gte: start, $lte: end } } },
+      { $group: { _id: null, pcs: { $sum: '$quantity' }, pay: { $sum: { $multiply: ['$quantity', '$labourRate'] } } } }
+    ]);
 
-  const workerStats = workers.map(w => {
-    const mat = db.prepare(`
-        SELECT SUM(cost) as total 
-        FROM materials 
-        WHERE worker_id = ? AND date BETWEEN ? AND ?
-     `).get(w.id, start, end) as { total: number };
+    const wMat = await Material.aggregate([
+      { $match: { workerId: wId, date: { $gte: start, $lte: end } } },
+      { $group: { _id: null, total: { $sum: '$cost' } } }
+    ]);
 
-    const deduction = mat.total || 0;
+    const gross = wWork[0]?.pay || 0;
+    const ded = wMat[0]?.total || 0;
+
     return {
-      ...w,
-      deduction,
-      net_pay: w.gross_pay - deduction
+      id: wId.toString(),
+      name: w.name,
+      pieces: wWork[0]?.pcs || 0,
+      gross_pay: gross,
+      deduction: ded,
+      net_pay: gross - ded
     };
-  });
+  }));
+
+  // Filter out workers with zero activity if desired? No, nice to see list.
+  // Sort by name?
+  workerStats.sort((a, b) => a.name.localeCompare(b.name));
 
   return {
     business: {
-      revenue: business.revenue || 0,
-      labour_cost: business.labour_cost || 0,
-      material_cost: materials.total || 0,
-      profit: (business.revenue || 0) - (business.labour_cost || 0) // Materials are paid by worker deduction, so business profit is simply Rev - GrossLabour? 
-      // Wait, if business PAYS for material, and deducts from worker...
-      // Cash Flow: Out(Material) + Out(NetLabour) = Out(Material) + Out(Gross - Material) = Out(Gross).
-      // Profit = Revenue - GrossLabour.
-      // Correct.
-      // Unless material is "Shop Expense" not deducted. But user said "Deducted".
+      revenue,
+      labour_cost: labourCost,
+      material_cost: matCost,
+      profit: revenue - labourCost // See prev logic: Material is recovered from worker
     },
     workers: workerStats
   };
 }
 
-export async function getWorkerWorkHistory(workerId: number) {
-  return db.prepare(`
-    SELECT * FROM work_orders 
-    WHERE worker_id = ? 
-    ORDER BY created_at DESC
-  `).all(workerId);
+export async function getWorkerWorkHistory(workerId: string) {
+  await dbConnect();
+  const orders = await WorkOrder.find({ workerId })
+    .sort({ createdAt: -1 })
+    .lean();
+  return orders.map((o: any) => ({ ...o, id: o._id.toString() }));
 }
 
-export async function getWorkerMaterials(workerId: number) {
-  return db.prepare(`
-    SELECT * FROM materials 
-    WHERE worker_id = ? 
-    ORDER BY date DESC
-  `).all(workerId);
+export async function getWorkerMaterials(workerId: string) {
+  await dbConnect();
+  const mats = await Material.find({ workerId })
+    .sort({ date: -1 })
+    .lean();
+  return mats.map((m: any) => ({ ...m, id: m._id.toString() }));
 }

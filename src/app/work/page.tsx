@@ -23,15 +23,15 @@ export default async function WorkListPage() {
                     <div key={order.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col gap-3">
                         <div className="flex justify-between items-start">
                             <div>
-                                <span className="text-xs text-slate-400 font-medium">{format(new Date(order.date), 'MMM d, yyyy')}</span>
+                                <span className="text-xs text-slate-400 font-medium">{format(new Date(order.createdAt), 'MMM d, yyyy')}</span>
                                 <h3 className="font-bold text-slate-900 text-lg">{order.worker_name}</h3>
-                                <p className="text-sm text-slate-500">{order.quantity} pcs @ ₹{order.labour_rate}</p>
+                                <p className="text-sm text-slate-500">{order.quantity} pcs @ ₹{order.labourRate}</p>
                             </div>
                             <WorkStatusUpdater id={order.id} status={order.status} />
                         </div>
                         <div className="flex justify-between items-center text-xs border-t border-slate-50 pt-3">
-                            <span className="text-slate-400">Profit: <span className="text-emerald-600 font-semibold">₹{(order.quantity * (order.selling_price - order.labour_rate)).toFixed(0)}</span></span>
-                            <span className="text-slate-400">Total Pay: ₹{(order.quantity * order.labour_rate).toFixed(0)}</span>
+                            <span className="text-slate-400">Profit: <span className="text-emerald-600 font-semibold">₹{(order.quantity * (order.sellingPrice - order.labourRate)).toFixed(0)}</span></span>
+                            <span className="text-slate-400">Total Pay: ₹{(order.quantity * order.labourRate).toFixed(0)}</span>
                         </div>
                     </div>
                 ))}
