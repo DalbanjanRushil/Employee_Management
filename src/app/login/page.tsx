@@ -29,16 +29,23 @@ export default function LoginPage() {
                 redirect: false,
                 mobile,
                 password,
+                callbackUrl: '/'
             });
 
             if (result?.error) {
                 setError('Access Denied. Incorrect Mobile Number.');
                 setIsLoading(false);
-            } else {
+            } else if (result?.ok) {
+                // Successful login
                 router.push('/');
-                router.refresh(); // Ensure session updates
+                router.refresh();
+            } else {
+                // Unexpected state
+                setIsLoading(false);
+                setError('Login failed. Please try again.');
             }
         } catch (err) {
+            console.error("Login exception:", err);
             setError('Something went wrong. Please try again.');
             setIsLoading(false);
         }
