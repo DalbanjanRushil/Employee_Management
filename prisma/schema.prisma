@@ -1,0 +1,39 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Worker {
+  id          Int         @id @default(autoincrement())
+  name        String
+  labourRate  Float
+  joinedAt    DateTime    @default(now())
+  isActive    Boolean     @default(true)
+  workEntries WorkEntry[]
+  materials   Material[]
+}
+
+model WorkEntry {
+  id           Int       @id @default(autoincrement())
+  workerId     Int
+  worker       Worker    @relation(fields: [workerId], references: [id])
+  date         DateTime  @default(now())
+  quantity     Int
+  sellingPrice Float
+  labourRate   Float
+  status       String
+  completedAt  DateTime?
+}
+
+model Material {
+  id        Int      @id @default(autoincrement())
+  workerId  Int
+  worker    Worker   @relation(fields: [workerId], references: [id])
+  name      String
+  cost      Float
+  date      DateTime @default(now())
+}
